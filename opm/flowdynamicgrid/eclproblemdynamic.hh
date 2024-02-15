@@ -1199,7 +1199,7 @@ void fillContainerForGridAdaptation()
                 bool hasSamePrimaryVarsMeaning = (hasSamePrimaryVarsMeaningWater&&hasSamePrimaryVarsMeaningPressure&&hasSamePrimaryVarsMeaningGas&&hasSamePrimaryVarsMeaningBrine);
                 const Scalar indicator =
                     (maxSat - minSat);///(std::max<Scalar>(0.01, maxSat+minSat)/2);
-                if( indicator > 0.3 && elem.level() < 2 ) {
+                if( indicator > 0.3 && elem.level() < 3 ) {
                     grid.mark( 1, elem );
                     ++ numMarked;
                     ++ numMarked_refined;
@@ -2255,7 +2255,7 @@ RestrictProlongOperator restrictProlongOperator()
         // convert the source term from the total mass rate of the
         // cell to the one per unit of volume as used by the model.
         for (unsigned eqIdx = 0; eqIdx < numEq; ++ eqIdx) {
-            rate[eqIdx] /= this->model().dofTotalVolume(globalDofIdx);
+            rate[eqIdx] /= this->dofTotalVolumeOrg(globalDofIdx);
 
             Valgrind::CheckDefined(rate[eqIdx]);
             assert(isfinite(rate[eqIdx]));
@@ -2291,7 +2291,7 @@ RestrictProlongOperator restrictProlongOperator()
                 if (!FluidSystem::phaseIsActive(phaseIdx)) {
                     continue;
                 } 
-                Scalar mass_rate = source.rate({ijk, sourceComp}) / this->dofTotalVolumeOrg(globalDofIdx);
+                Scalar mass_rate = source.rate({ijk, sourceComp}) / this->dofTotalVolumeOrg(globalDofIdx) * this->model().dofTotalVolume(globalDofIdxCurrent) / this->dofTotalVolumeOrg(globalDofIdx);
                 if constexpr (getPropValue<TypeTag, Properties::BlackoilConserveSurfaceVolume>()) {
                     mass_rate /= FluidSystem::referenceDensity(phaseIdx, pvtRegionIdx);
                 }
@@ -2299,7 +2299,7 @@ RestrictProlongOperator restrictProlongOperator()
             }
 
             if constexpr (enableSolvent) {
-                Scalar mass_rate = source.rate({ijk, SourceComponent::SOLVENT}) / this->dofTotalVolumeOrg(globalDofIdx);
+                Scalar mass_rate = source.rate({ijk, SourceComponent::SOLVENT}) / this->dofTotalVolumeOrg(globalDofIdx) * this->model().dofTotalVolume(globalDofIdxCurrent) / this->dofTotalVolumeOrg(globalDofIdx);
                 if constexpr (getPropValue<TypeTag, Properties::BlackoilConserveSurfaceVolume>()) {
                     const auto& solventPvt = SolventModule::solventPvt();
                     mass_rate /= solventPvt.referenceDensity(pvtRegionIdx);
@@ -2307,7 +2307,7 @@ RestrictProlongOperator restrictProlongOperator()
                 rate[Indices::contiSolventEqIdx] += mass_rate;
             }
             if constexpr (enablePolymer) {
-                rate[Indices::polymerConcentrationIdx] += source.rate({ijk, SourceComponent::POLYMER}) / this->dofTotalVolumeOrg(globalDofIdx);
+                rate[Indices::polymerConcentrationIdx] += source.rate({ijk, SourceComponent::POLYMER}) / this->dofTotalVolumeOrg(globalDofIdx) * this->model().dofTotalVolume(globalDofIdxCurrent) / this->dofTotalVolumeOrg(globalDofIdx);
             }
             if constexpr (enableEnergy) {
                 for (unsigned i = 0; i < phidx_map.size(); ++i) {
@@ -2317,7 +2317,7 @@ RestrictProlongOperator restrictProlongOperator()
                     }
                     const auto sourceComp = sc_map[i];
                     if (source.hasHrate({ijk, sourceComp})) {
-                        rate[Indices::contiEnergyEqIdx] += source.hrate({ijk, sourceComp}) / this->dofTotalVolumeOrg(globalDofIdx);
+                        rate[Indices::contiEnergyEqIdx] += source.hrate({ijk, sourceComp}) / this->dofTotalVolumeOrg(globalDofIdx) * this->model().dofTotalVolume(globalDofIdxCurrent) / this->dofTotalVolumeOrg(globalDofIdx);
                     } else {
                         const auto& intQuants = this->simulator().model().intensiveQuantities(globalDofIdx, /*timeIdx*/ 0);
                         auto fs = intQuants.fluidState();
@@ -2327,7 +2327,7 @@ RestrictProlongOperator restrictProlongOperator()
                             fs.setTemperature(temperature);
                         }
                         const auto& h = FluidSystem::enthalpy(fs, phaseIdx, pvtRegionIdx);
-                        Scalar mass_rate = source.rate({ijk, sourceComp})/ this->dofTotalVolumeOrg(globalDofIdx);
+                        Scalar mass_rate = source.rate({ijk, sourceComp})/ this->dofTotalVolumeOrg(globalDofIdx) * this->model().dofTotalVolume(globalDofIdxCurrent) / this->dofTotalVolumeOrg(globalDofIdx);
                         Scalar energy_rate = getValue(h)*mass_rate;
                         rate[Indices::contiEnergyEqIdx] += energy_rate;
                     }
