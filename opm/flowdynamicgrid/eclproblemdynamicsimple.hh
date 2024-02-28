@@ -94,7 +94,7 @@
 #include <opm/utility/CopyablePtr.hpp>
 
 #include <opm/common/OpmLog/OpmLog.hpp>
-#include "refinementstrategy.hh"
+
 #include <algorithm>
 #include <functional>
 #include <set>
@@ -585,10 +585,6 @@
 // };
 
 // } namespace Opm::Properties
-namespace Opm
-{
-class PropertyTree;
-}
 
 
 namespace Opm {
@@ -600,15 +596,9 @@ namespace Opm {
  *        commercial ECLiPSE simulator.
  */
 template <class TypeTag>
-class EclProblemDynamic : public GetPropType<TypeTag, Properties::BaseProblem>
-                 , public EclGenericProblem<GetPropType<TypeTag, Properties::GridView>,
-                                            GetPropType<TypeTag, Properties::FluidSystem>,
-                                            GetPropType<TypeTag, Properties::Scalar>>
+class EclProblemDynamic : public EclProblem<Typetag>
 {
-    using BaseType = EclGenericProblem<GetPropType<TypeTag, Properties::GridView>,
-                                       GetPropType<TypeTag, Properties::FluidSystem>,
-                                       GetPropType<TypeTag, Properties::Scalar>>;
-    using ParentType = GetPropType<TypeTag, Properties::BaseProblem>;
+    using ParentType = EclProblem<GetPropType<TypeTag>;
     using Implementation = GetPropType<TypeTag, Properties::Problem>;
 
     using Scalar = GetPropType<TypeTag, Properties::Scalar>;
@@ -694,13 +684,11 @@ class EclProblemDynamic : public GetPropType<TypeTag, Properties::BaseProblem>
     using PressureMeaning = typename PrimaryVariables::PressureMeaning;
     using GasMeaning = typename PrimaryVariables::GasMeaning;
     using BrineMeaning = typename PrimaryVariables::BrineMeaning;
-    using SolventMeaning = typename PrimaryVariables::SolventMeaning;
     enum class PrimaryVarsMeaning {
         WaterMeaning,  //Sw, Rvw, Rsw, disabled; (Water Meaning)
         PressureMeaning, // Po, Pg, Pw, disable; (Pressure Meaning)
         GasMeaning, // Rg, Rs, Rvm disabled; (Gas Meaning)
         BrineMeaning, // Rg, Rs, Rvm disabled; (Brine Meaning)
-        SolventMeaning, // RS, Rsolw, disabled; (Brine Meaning)
         Undef, // The primary variable is not used
      };
 
@@ -709,7 +697,6 @@ class EclProblemDynamic : public GetPropType<TypeTag, Properties::BaseProblem>
                PressureMeaning pm;
                GasMeaning gm;
                BrineMeaning bm;
-               SolventMeaning sm;
                int preAdaptIndex;
          //MaterialLawParams matLawParams;
                bool isCellPerforation;
@@ -865,16 +852,6 @@ public:
 
         RelpermDiagnostics relpermDiagnostics;
         relpermDiagnostics.diagnosis(vanguard.eclState(), vanguard.cartesianIndexMapper());
-        std::string filename("refstrat.json");
-        if ( !std::filesystem::exists(filename)){
-             OPM_THROW(std::invalid_argument, "JSON file " + filename + " does not exist.");
-        }
-        PropertyTree prm(filename);
-        std::ostringstream os;
-        os << "Property tree for refinmentstategy:\n";
-        prm.write_json(os, true);
-        refStrat_ = Opm::RefinementStrategy(prm);
-        OpmLog::note(os.str());
     }
 
     /*!
@@ -1039,14 +1016,8 @@ public:
                 container_[elem].pm = sol[elemIdx].primaryVarsMeaningPressure();
                 container_[elem].gm = sol[elemIdx].primaryVarsMeaningGas();
                 container_[elem].bm = sol[elemIdx].primaryVarsMeaningBrine();
-                container_[elem].sm = sol[elemIdx].primaryVarsMeaningSolvent();
-                if(refStrat_.isInitialRefined(container_[elem].preAdaptIndex, elem.level())){
-                    grid.mark( 1, elem );
-                }
-                if(refStrat_.isInitialCoarsened(container_[elem].preAdaptIndex, elem.level())){
-                    // not sure if this work set to false for now
-                    grid.mark( -1, elem );
-                }
+
+                grid.mark( 1, elem );
             }
             this->simulator().model().adaptMarkedGrid();
             // simulator.model().adaptManager().adapt()
@@ -1120,7 +1091,6 @@ void fillContainerForGridAdaptation()
             container_[elem].pm = sol[elemIdx].primaryVarsMeaningPressure();
             container_[elem].gm = sol[elemIdx].primaryVarsMeaningGas();
             container_[elem].bm = sol[elemIdx].primaryVarsMeaningBrine();
-            container_[elem].sm = sol[elemIdx].primaryVarsMeaningSolvent();
             //container_[elem].matLawParams = materialLawParams(elemIdx);
             container_[elem].preAdaptIndex = elemIdx;
             preAdaptGridIndex_[elemIdx]=elemIdx;
@@ -1163,7 +1133,6 @@ void fillContainerForGridAdaptation()
             container_[elem].pm = sol[elemIdx].primaryVarsMeaningPressure();
             container_[elem].gm = sol[elemIdx].primaryVarsMeaningGas();
             container_[elem].bm = sol[elemIdx].primaryVarsMeaningBrine();
-            container_[elem].sm = sol[elemIdx].primaryVarsMeaningSolvent();
             //       container_[elem].matLawParams = materialLawParams(elemIdx);
             //container_[elem].preAdaptIndex = elemIdx;
             //preAdaptGridIndex_[elemIdx]=elemIdx;
@@ -1189,12 +1158,10 @@ void fillContainerForGridAdaptation()
                 bool hasSamePrimaryVarsMeaningPressure = true;
                 bool hasSamePrimaryVarsMeaningGas = true;
                 bool hasSamePrimaryVarsMeaningBrine = true;
-                bool hasSamePrimaryVarsMeaningSolvent = true;
                 const auto& primaryVarsMeaningWaterBase = elemCtx.primaryVars(0, /*timeIdx=*/0 ).primaryVarsMeaningWater();
                 const auto& primaryVarsMeaningPressureBase = elemCtx.primaryVars(0, /*timeIdx=*/0 ).primaryVarsMeaningPressure();
                 const auto& primaryVarsMeaningGasBase = elemCtx.primaryVars(0, /*timeIdx=*/0 ).primaryVarsMeaningGas();
                 const auto& primaryVarsMeaningBrineBase = elemCtx.primaryVars(0, /*timeIdx=*/0 ).primaryVarsMeaningBrine();
-                const auto& primaryVarsMeaningSolventBase = elemCtx.primaryVars(0, /*timeIdx=*/0 ).primaryVarsMeaningSolvent();
 
                 size_t nDofs = elemCtx.numDof(/*timeIdx=*/0);
                 for (unsigned dofIdx = 0; dofIdx < nDofs; ++dofIdx)
@@ -1212,20 +1179,18 @@ void fillContainerForGridAdaptation()
                         hasSamePrimaryVarsMeaningGas = false;
                  if(primaryVarsMeaningBrineBase != elemCtx.primaryVars(dofIdx, /*timeIdx=*/0 ).primaryVarsMeaningBrine())
                         hasSamePrimaryVarsMeaningBrine = false;
-                 if(primaryVarsMeaningSolventBase != elemCtx.primaryVars(dofIdx, /*timeIdx=*/0 ).primaryVarsMeaningSolvent())
-                        hasSamePrimaryVarsMeaningSolvent = false;
                 }
 
-                bool hasSamePrimaryVarsMeaning = (hasSamePrimaryVarsMeaningWater&&hasSamePrimaryVarsMeaningPressure&&hasSamePrimaryVarsMeaningGas&&hasSamePrimaryVarsMeaningBrine&&hasSamePrimaryVarsMeaningSolvent);
+                bool hasSamePrimaryVarsMeaning = (hasSamePrimaryVarsMeaningWater&&hasSamePrimaryVarsMeaningPressure&&hasSamePrimaryVarsMeaningGas&&hasSamePrimaryVarsMeaningBrine);
                 const Scalar indicator =
                     (maxSat - minSat);///(std::max<Scalar>(0.01, maxSat+minSat)/2);
-                if( refStrat_.shouldBeRefined(indicator , elem.level()) ) {
+                if( indicator > 0.3 && elem.level() < 2 ) {
                     grid.mark( 1, elem );
                     ++ numMarked;
                     ++ numMarked_refined;
                     //std::cout << "refine cell " << elemIdx << " preadapt " << container_[elem].preAdaptIndex << std::endl;
                 }
-                else if ( refStrat_.shouldBeCoarsened(hasSamePrimaryVarsMeaning,indicator, elem.level() ) )
+                else if ( hasSamePrimaryVarsMeaning && indicator < 0.025 && elem.level() > 0)
                 {
                     grid.mark( -1, elem );
                     //std::cout << "coarse cell " << elemIdx << " preadapt " << container_[elem].preAdaptIndex << std::endl;
@@ -1240,26 +1205,12 @@ void fillContainerForGridAdaptation()
             }
             }
         }
-
         std::cout << "Num coarsened cell " << numMarked_coarsen << std::endl;
         std::cout << "Num refined cell " << numMarked_refined << std::endl;
         std::cout << "Num marked" << numMarked << std::endl;
         // get global sum so that every proc is on the same page
         numMarked = this->simulator().vanguard().grid().comm().sum( numMarked );
-        if(numMarked < refStrat_.minNumMarked()){
-            std::cout << "To few marked" << std::endl;
-            elemIt = gridView.template begin</*codim=*/0, Dune::Interior_Partition>();
-            elemEndIt = gridView.template end</*codim=*/0, Dune::Interior_Partition>();
-            for (; elemIt != elemEndIt; ++elemIt)
-            {
-                const auto& elem = *elemIt;
-                if (elem.partitionType() != Dune::InteriorEntity)
-                    continue;
-                elemCtx.updateAll(elem);
-                grid.mark( 0, elem );
-            }
-            numMarked = 0;
-        }
+
         return numMarked;
     }
 RestrictProlongOperator restrictProlongOperator()
@@ -1629,40 +1580,6 @@ RestrictProlongOperator restrictProlongOperator()
         return transmissibilities_.transmissibility(globalCenterElemIdx, globalElemIdx);
     }
 
-    /*!
-     * \copydoc EclTransmissiblity::diffusivity
-     */
-    template <class Context>
-    Scalar diffusivity(const Context& context,
-                       [[maybe_unused]] unsigned fromDofLocalIdx,
-                       unsigned toDofLocalIdx) const
-    {
-        assert(fromDofLocalIdx == 0);
-        return *pffDofData_.get(context.element(), toDofLocalIdx).diffusivity;
-    }
-
-    /*!
-     * give the transmissibility for a face i.e. pair. should be symmetric?
-     */
-    Scalar diffusivity(const unsigned globalCellIn, const unsigned globalCellOut) const{
-        return transmissibilities_.diffusivity(globalCellIn, globalCellOut);
-    }
-
-    /*!
-     * give the dispersivity for a face i.e. pair.
-     */
-    Scalar dispersivity(const unsigned globalCellIn, const unsigned globalCellOut) const{
-        return transmissibilities_.dispersivity(globalCellIn, globalCellOut);
-    }
-
-    /*!
-     * \brief Direct access to a boundary transmissibility.
-     */
-    Scalar thermalTransmissibilityBoundary(const unsigned globalSpaceIdx,
-                                    const unsigned boundaryFaceIdx) const
-    {
-        return transmissibilities_.thermalTransmissibilityBoundary(globalSpaceIdx, boundaryFaceIdx);
-    }
 
 
     /*!
@@ -1677,24 +1594,8 @@ RestrictProlongOperator restrictProlongOperator()
         return transmissibilities_.transmissibilityBoundary(container_[entity].preAdaptIndex, boundaryFaceIdx);
     }
 
-    /*!
-     * \brief Direct access to a boundary transmissibility.
-     */
-    Scalar transmissibilityBoundary(const unsigned globalSpaceIdx,
-                                    const unsigned boundaryFaceIdx) const
-    {
-        return transmissibilities_.transmissibilityBoundary(globalSpaceIdx, boundaryFaceIdx);
-    }
 
 
-    /*!
-     * \copydoc EclTransmissiblity::thermalHalfTransmissibility
-     */
-    Scalar thermalHalfTransmissibility(const unsigned globalSpaceIdxIn,
-                                       const unsigned globalSpaceIdxOut) const
-    {
-        return transmissibilities_.thermalHalfTrans(globalSpaceIdxIn,globalSpaceIdxOut);
-    }
     /*!
      * \copydoc EclTransmissiblity::thermalHalfTransmissibility
      */
@@ -2280,7 +2181,7 @@ RestrictProlongOperator restrictProlongOperator()
         // convert the source term from the total mass rate of the
         // cell to the one per unit of volume as used by the model.
         for (unsigned eqIdx = 0; eqIdx < numEq; ++ eqIdx) {
-            rate[eqIdx] /= this->dofTotalVolumeOrg(globalDofIdx);
+            rate[eqIdx] /= this->model().dofTotalVolume(globalDofIdx);
 
             Valgrind::CheckDefined(rate[eqIdx]);
             assert(isfinite(rate[eqIdx]));
@@ -2323,7 +2224,7 @@ RestrictProlongOperator restrictProlongOperator()
             }
 
             if constexpr (enableSolvent) {
-                Scalar mass_rate = source.rate({ijk, SourceComponent::SOLVENT}) / this->dofTotalVolumeOrg(globalDofIdx) * this->model().dofTotalVolume(globalDofIdxCurrent) / this->dofTotalVolumeOrg(globalDofIdx);
+                Scalar mass_rate = source.rate({ijk, SourceComponent::SOLVENT}) / this->dofTotalVolumeOrg(globalDofIdx);
                 if constexpr (getPropValue<TypeTag, Properties::BlackoilConserveSurfaceVolume>()) {
                     const auto& solventPvt = SolventModule::solventPvt();
                     mass_rate /= solventPvt.referenceDensity(pvtRegionIdx);
@@ -2331,7 +2232,7 @@ RestrictProlongOperator restrictProlongOperator()
                 rate[Indices::contiSolventEqIdx] += mass_rate;
             }
             if constexpr (enablePolymer) {
-                rate[Indices::polymerConcentrationIdx] += source.rate({ijk, SourceComponent::POLYMER}) / this->dofTotalVolumeOrg(globalDofIdx) * this->model().dofTotalVolume(globalDofIdxCurrent) / this->dofTotalVolumeOrg(globalDofIdx);
+                rate[Indices::polymerConcentrationIdx] += source.rate({ijk, SourceComponent::POLYMER}) / this->dofTotalVolumeOrg(globalDofIdx);
             }
             if constexpr (enableEnergy) {
                 for (unsigned i = 0; i < phidx_map.size(); ++i) {
@@ -2341,7 +2242,7 @@ RestrictProlongOperator restrictProlongOperator()
                     }
                     const auto sourceComp = sc_map[i];
                     if (source.hasHrate({ijk, sourceComp})) {
-                        rate[Indices::contiEnergyEqIdx] += source.hrate({ijk, sourceComp}) / this->dofTotalVolumeOrg(globalDofIdx) * this->model().dofTotalVolume(globalDofIdxCurrent) / this->dofTotalVolumeOrg(globalDofIdx);
+                        rate[Indices::contiEnergyEqIdx] += source.hrate({ijk, sourceComp}) / this->dofTotalVolumeOrg(globalDofIdx);
                     } else {
                         const auto& intQuants = this->simulator().model().intensiveQuantities(globalDofIdx, /*timeIdx*/ 0);
                         auto fs = intQuants.fluidState();
@@ -2351,7 +2252,7 @@ RestrictProlongOperator restrictProlongOperator()
                             fs.setTemperature(temperature);
                         }
                         const auto& h = FluidSystem::enthalpy(fs, phaseIdx, pvtRegionIdx);
-                        Scalar mass_rate = source.rate({ijk, sourceComp})/ this->dofTotalVolumeOrg(globalDofIdx) * this->model().dofTotalVolume(globalDofIdxCurrent) / this->dofTotalVolumeOrg(globalDofIdx);
+                        Scalar mass_rate = source.rate({ijk, sourceComp})/ this->dofTotalVolumeOrg(globalDofIdx);
                         Scalar energy_rate = getValue(h)*mass_rate;
                         rate[Indices::contiEnergyEqIdx] += energy_rate;
                     }
@@ -2692,27 +2593,8 @@ RestrictProlongOperator restrictProlongOperator()
         return {bc.bctype, rate};
     }
 
-    const std::unique_ptr<EclWriterType>& eclWriter() const
-    {
-        return eclWriter_;
-    }
 
-    void setConvData(const std::vector<std::vector<int>>& data)
-    {
-        eclWriter_->mutableEclOutputModule().setCnvData(data);
-    }
 
-    template<class Serializer>
-    void serializeOp(Serializer& serializer)
-    {
-        serializer(static_cast<BaseType&>(*this));
-        serializer(drift_);
-        serializer(wellModel_);
-        serializer(aquiferModel_);
-        serializer(tracerModel_);
-        serializer(*materialLawManager_);
-        serializer(*eclWriter_);
-    }
 private:
     Implementation& asImp_()
     { return *static_cast<Implementation *>(this); }
@@ -2988,7 +2870,6 @@ protected:
             priVars.setPrimaryVarsMeaningPressure(container_[*it].pm);
             priVars.setPrimaryVarsMeaningGas(container_[*it].gm);
             priVars.setPrimaryVarsMeaningBrine(container_[*it].bm);
-            priVars.setPrimaryVarsMeaningSolvent(container_[*it].sm);
             priVars.setPvtRegionIndex(container_[*it].pvtRegionIdx);
             // MaterialLawParams  mlp = container_[*it].matLawParams;
             // Opm::EnsureFinalized();
@@ -3992,7 +3873,6 @@ public:
     std::vector<unsigned int> ordering_;
     std::vector<double> orgVolume_;
     int refinedGlobal_;
-    RefinementStrategy refStrat_;
 };
 
 } // namespace Opm
