@@ -2035,7 +2035,7 @@ RestrictProlongOperator restrictProlongOperator()
     {
         // use the initial temperature of the DOF if temperature is not a primary
         // variable
-         return initialFluidStates_[globalDofIdx].temperature(/*phaseIdx=*/0);
+         return initialFluidStates_[postAdaptGridIndex_[globalDofIdx]].temperature(/*phaseIdx=*/0);
     }
 
     const SolidEnergyLawParams&
